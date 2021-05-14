@@ -2,36 +2,285 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <array>
+#include <set>
+#include <chrono>
 
 using namespace std;
 
 #define DEBUGVAR(x) do { std::cerr << #x << ": " << x << std::endl; } while (0)
+#define MAX_TREE 8
+#define NOW chrono::high_resolution_clock::now()
 
+auto cmp = [](pair<int, int> a, pair<int, int> b) { return a.second > b.second; };
+
+
+class Point {
+public:
+    int x;
+    int y;
+    int z;
+
+    Point() {};
+    Point(int x, int y, int z) : x(x), y(y), z(z) {};
+};
+
+class Tree;
+// class Cell;
+
+// Cell *cells;
+// array<Tree, 37> trees;
+
+class Cell {
+public:
+    static int numberOfCells;
+    static array<Cell, 37> cells;
+
+    int index;
+    Point coord;
+    int richness;
+    int neigh[6];
+    Tree *tree;
+
+    Cell *getNeigh(int index) {
+        Cell *ret;
+
+        ret = neigh[index % 6] != -1 ? &cells[neigh[index % 6]] : NULL;
+
+        return ret;
+    }
+
+    void print() {
+        cerr << "Cell\n\t";
+        DEBUGVAR(index);
+        cerr << '\t';
+        DEBUGVAR(richness);
+        cerr << "\tneigh: " << neigh[0] << " " << neigh[1] << " " << neigh[2] << " " << neigh[3] << " "
+            << neigh[4] << " " << neigh[5] << '\n';
+    }
+};
+
+int Cell::numberOfCells = 0;
+array<Cell, 37> Cell::cells;
+int cellDistance(const Cell &c1, const Cell &c2) {
+    return (abs(c1.coord.x - c2.coord.x) + abs(c1.coord.y - c2.coord.y) + abs(c1.coord.z - c2.coord.z)) / 2;
+}
+
+int canShadow(const Cell &c1, const Cell &c2) {
+    if (c1.coord.x == c2.coord.x || c1.coord.y == c2.coord.y
+    || c1.coord.z == c2.coord.z) {
+        int dis = cellDistance(c1, c2);
+        if (dis <= 3) {
+            return dis;
+        }
+    }
+    return 0;
+}
+
+class Tree {
+public:
+    static int numberOfTrees;
+    static array<Tree, 37> trees;
+
+    Cell *cell;
+    int size;
+    bool isMine;
+    bool isDormant;
+
+    Tree() : cell(NULL), size(-1) {
+    }
+
+    bool exist() const {
+        return cell != NULL;
+    }
+
+    pair<int, int> getNoShadowCell() {
+        set<int> resultList;
+        // set<int> result3;
+        for (int i = 0; i < 6; i++) {
+            if (cell->getNeigh(i)) {
+                Cell *neigh1;
+                neigh1 = cell->getNeigh(i)->getNeigh(i + 1);
+                if (neigh1 && neigh1->tree == NULL && neigh1->richness > 0) {
+                    resultList.insert(neigh1->index);
+                }
+                if (neigh1) {
+                    Cell *neigh2, *neigh3;
+                    neigh2 = neigh1->getNeigh(i);
+                    neigh3 = neigh1->getNeigh(i + 1);
+                    if (neigh2 && neigh2->tree == NULL && neigh2->richness > 0) {
+                        resultList.insert(neigh2->index);
+                    }
+                    if (neigh3 && neigh3->tree == NULL && neigh3->richness > 0) {
+                        resultList.insert(neigh3->index);
+                    }
+                }
+            }
+        }
+        pair<int, int> result(-1, -100);
+        for (int i : resultList) {
+            int score = Cell::cells[i].richness * 6 - (cellDistance(*cell, Cell::cells[i]) / 3);
+            for (const Tree &tree : trees) {
+                // cerr << tree.cell->index << endl;
+                if (tree.exist() && tree.isMine && canShadow(Cell::cells[i], *tree.cell)) {
+                    // cerr << "SHADOW " << i << " " << tree.cell->index << endl;
+                    score -= 2;
+                }
+            }
+            // cerr << "Try " << i << " " << score << " " << cell->index << " " << Cell::cells[i].index << " " << cellDistance(*cell, Cell::cells[i]) << endl;
+            if (result.first == -1 || result.second < score || (result.second == score && 
+            cellDistance(*cell, Cell::cells[i]) < cellDistance(*cell, Cell::cells[result.first]))) {
+                // cerr << "OK" << endl;
+                result = make_pair(i, score);
+            }
+            // cerr << i << " ";
+        }
+        // cerr << "\n";
+        // for (int i : result3) {
+        //     cerr << i << " ";
+        // }
+        // if (result2.begin() != result2.end()) {
+        //     return cells + (*result2.begin());
+        // }
+        // if (result2.begin() != result2.end()) {
+        //     return cells + (*result2.begin());
+        // }
+        // return result.first != -1 ? &Cell::cells[result.first] : NULL;
+        return result;
+    }
+
+    static set<pair<int, int>, decltype(cmp)> getGrowSeed() {
+        set<pair<int, int>, decltype(cmp)> result(cmp);
+        // pair<int, int> best(-1, -100);
+        for (const Tree &seed : trees) {
+            if (seed.exist() && seed.isMine && seed.size < 3) {
+                int score = seed.cell->richness - seed.size;
+                for (const Tree &tree : trees) {
+                    if (tree.exist() && tree.isMine && canShadow(*seed.cell, *tree.cell)) {
+                        // cerr << "CAN SHADOW " << seed.cell->index << " " << tree.cell->index << endl;
+                        --score;
+                    }
+                }
+                result.insert(make_pair(seed.cell->index, score));
+                // if (best.first == -1 || best.second < score) {
+                //     best = make_pair(seed.cell->index, score);
+                // }
+            }
+        }
+        return result;
+    }
+
+    static set<pair<int, int>, decltype(cmp)> getCompleteTree() {
+        // pair<int, int> best(-1, -100);
+        set<pair<int, int>, decltype(cmp)> result(cmp);
+
+        for (const Tree &seed : trees) {
+            if (seed.exist() && seed.isMine && seed.size == 3) {
+                int score = -seed.cell->richness;
+                for (const Tree &tree : trees) {
+                    if (tree.exist() && tree.isMine && canShadow(*seed.cell, *tree.cell)) {
+                        // cerr << "CAN SHADOW " << seed.cell->index << " " << tree.cell->index << endl;
+                        ++score;
+                    }
+                }
+                result.insert(make_pair(seed.cell->index, score));
+            }
+        }
+        return result;
+    }
+
+    static int countMyTrees(int size) {
+        int count = 0;
+        for (const Tree &tree : trees) {
+            if (tree.exist() && tree.isMine && (size == -1 || tree.size == size)) {
+                ++count;
+            }
+        }
+        return count;
+    }
+};
+
+
+Point cellsCoordinates[37] = {
+Point(0, 0, 0), Point(1, -1, 0), Point(1, 0, -1), Point(0, 1, -1), Point(-1, 1, 0),
+Point(-1, 0, 1), Point(0, -1, 1), Point(2, -2, 0), Point(2, -1, -1), Point(2, 0, -2),
+Point(1, 1, -2), Point(0, 2, -2), Point(-1, 2, -1), Point(-2, 2, 0), Point(-2, 1, 1),
+Point(-2, 0, 2), Point(-1, -1, 2), Point(0, -2, 2), Point(1, -2, 1), Point(3, -3, 0),
+Point(3, -2, -1), Point(3, -1, -2), Point(3, 0, -3), Point(2, 1, -3), Point(1, 2, -3),
+Point(0, 3, -3), Point(-1, 3, -2), Point(-2, 3, -1), Point(-3, 3, 0), Point(-3, 2, 1),
+Point(-3, 1, 2), Point(-3, 0, 3), Point(-2, -1, 3), Point(-1, -2, 3), Point(0, -3, 3),
+Point(1, -3, 2), Point(2, -3, 1)};
+
+int Tree::numberOfTrees = 0;
+array<Tree, 37> Tree::trees;
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
 
+namespace action {
+    bool seed(Tree & tree, Cell & cell) {
+        if (!tree.isDormant) {
+            cout << "SEED " << tree.cell->index << " " << cell.index << endl;
+            return true;
+        }
+        cerr << "IS DORMANT" << endl;
+        return false;
+    }
+
+    bool grow(Tree & tree) {
+        if (!tree.isDormant) {
+            cout << "GROW " << tree.cell->index << endl;
+            return true;
+        }
+        return false;
+    }
+
+    bool complete(Tree & tree) {
+        if (!tree.isDormant) {
+            cout << "COMPLETE " << tree.cell->index << endl;
+            return true;
+        }
+        return false;
+    }
+
+    void wait() {
+        cout << "WAIT" << endl;
+    }
+}
+
 int main()
 {
-    int numberOfCells; // 37
-    cin >> numberOfCells; cin.ignore();
-    for (int i = 0; i < numberOfCells; i++) {
+    cin >> Cell::numberOfCells; cin.ignore();
+    int cellsRichness[Cell::numberOfCells];
+    // cells = new Cell[Cell::numberOfCells];
+    for (int i = 0; i < Cell::numberOfCells; i++) {
         int index; // 0 is the center cell, the next cells spiral outwards
-        int richness; // 0 if the cell is unusable, 1-3 for usable cells
-        int neigh0; // the index of the neighbouring cell for each direction
-        int neigh1;
-        int neigh2;
-        int neigh3;
-        int neigh4;
-        int neigh5;
-        cin >> index >> richness >> neigh0 >> neigh1 >> neigh2 >> neigh3 >> neigh4 >> neigh5; cin.ignore();
+        cin >> index
+            >> Cell::cells[index].richness
+            >> Cell::cells[index].neigh[0]
+            >> Cell::cells[index].neigh[1]
+            >> Cell::cells[index].neigh[2]
+            >> Cell::cells[index].neigh[3]
+            >> Cell::cells[index].neigh[4]
+            >> Cell::cells[index].neigh[5];
+            cin.ignore();
+        Cell::cells[index].index = index;
+        Cell::cells[index].coord = cellsCoordinates[i];
+        Tree::trees[index].cell = NULL;
+        // Cell::cells[index].print();
+        // cerr << index << "\t" << Cell::cells[index].coord.x << "\t" << Cell::cells[index].coord.y
+        //     << "\t" << Cell::cells[index].coord.z << "\t|\t"
+        //     << (Cell::cells[index].coord.x + Cell::cells[index].coord.y + Cell::cells[index].coord.z) << "\n";
     }
 
     // game loop
+
     while (1) {
+        chrono::high_resolution_clock::time_point start = NOW;
         int day; // the game lasts 24 days: 0-23
-        cin >> day; cin.ignore();
+        cin >> day;
+        cin.ignore();
         int nutrients; // the base score you gain from the next COMPLETE action
         cin >> nutrients; cin.ignore();
         int sun; // your sun points
@@ -41,31 +290,107 @@ int main()
         int oppScore; // opponent's score
         bool oppIsWaiting; // whether your opponent is asleep until the next day
         cin >> oppSun >> oppScore >> oppIsWaiting; cin.ignore();
-        int numberOfTrees; // the current amount of trees
-        cin >> numberOfTrees; cin.ignore();
-        pair<int, int> chosenTree(0, 0);
-        for (int i = 0; i < numberOfTrees; i++) {
+        cin >> Tree::numberOfTrees; cin.ignore();
+
+        auto cmp2 = [](pair<int, pair<int, int>> a, pair<int, pair<int, int>> b) { return a.second.second > b.second.second; };
+        set<pair<int, pair<int, int>>, decltype(cmp2)> result(cmp2);
+        Tree::trees.fill(Tree());
+        for (int i = 0; i < Tree::numberOfTrees; i++) {
             int cellIndex; // location of this tree
             int size; // size of this tree: 0-3
             bool isMine; // 1 if this is your tree
             bool isDormant; // 1 if this tree is dormant
-            cin >> cellIndex >> size >> isMine >> isDormant; cin.ignore();
-            if (isMine && size > chosenTree.second) {
-                chosenTree.first = cellIndex;
-                chosenTree.second = size;
+            cin >> cellIndex
+                >> Tree::trees[cellIndex].size
+                >> Tree::trees[cellIndex].isMine
+                >> Tree::trees[cellIndex].isDormant;
+            cin.ignore();
+            Tree::trees[cellIndex].cell = &Cell::cells[cellIndex];
+            Cell::cells[cellIndex].tree = &Tree::trees[cellIndex];
+
+            // cerr << "Tree " << cellIndex << endl;
+            if (Tree::trees[cellIndex].isMine) {
+                result.insert(make_pair(cellIndex, Tree::trees[cellIndex].getNoShadowCell()));
             }
+            // cerr << Tree::numberOfTrees << "\n";
         }
+        for (pair<int, pair<int, int>> r : result) {
+            cerr << r.first << " " << r.second.first << " " << r.second.second << endl;
+        }
+        // for (int i = 0; i < Tree::numberOfTrees; ++i) {
+        //     trees[i]
+        // }
         int numberOfPossibleMoves;
         cin >> numberOfPossibleMoves; cin.ignore();
-        DEBUGVAR(numberOfPossibleMoves);
+        // DEBUGVAR(numberOfPossibleMoves);
         for (int i = 0; i < numberOfPossibleMoves; i++) {
             string possibleMove;
             getline(cin, possibleMove);
         }
-        cout << "COMPLETE " << chosenTree.first << endl;
-        // Write an action using cout. DON'T FORGET THE "<< endl"
-        // To debug: cerr << "Debug messages..." << endl;
 
+        if (Tree::countMyTrees(3) >= (23 - day) / 2) {
+            cerr << "C " << Tree::countMyTrees(3) << " " << (23 - day) / 2 << endl;
+            set<pair<int, int>, decltype(cmp)> trees = Tree::getCompleteTree();
+            int i = 0;
+            for (const pair<int, int> &tree : trees) {
+                cerr << "CT " << tree.first << endl;
+                if (action::complete(Tree::trees[tree.first])) {
+                    break;
+                }
+                ++i;
+            }
+            if (i == trees.size()) {
+                action::wait();
+                // cout << "WAIT" << endl;
+            }
+
+        } else if (Tree::countMyTrees(-1) < (MAX_TREE - (day / 5)) && result.size() > 0) {
+            int i = 0;
+            cerr << "S" << endl;
+            for (const pair<int, pair<int, int>> &item : result) {
+                Tree &tree = Tree::trees[item.first];
+                Cell &cell = Cell::cells[item.second.first];
+                if (cellDistance(*tree.cell, cell) > tree.size) {
+                    if (action::grow(tree)) {
+                        break;
+                    }
+                    // cout << "GROW " << tree.cell->index << endl;
+                    // break;
+                } else {
+                    if (action::seed(tree, cell)) {
+                        break;
+                    }
+                    // cout << "SEED " << item.first << " " << item.second.first << endl;
+                    // break;
+                }
+                ++i;
+            }
+            if (i == result.size()) {
+                action::wait();
+            }
+        } else {
+            cerr << "G" << endl;
+            set<pair<int, int>, decltype(cmp)> seeds = Tree::getGrowSeed();
+            int i = 0;
+            // cerr << "WAS HERE " << s << endl;
+            for (const pair<int, int> &growSeed : seeds) {
+                if (growSeed.first != -1 && action::grow(Tree::trees[growSeed.first])) {
+                    // cout << "GROW " << growSeed.first << endl;
+                    // action::grow(Tree::trees[growSeed.first]);
+                    break;
+                }
+                ++i;
+            }
+            if (i == seeds.size()) {
+                action::wait();
+                // cout << "WAIT" << endl;
+            }
+        // } else {
+        //     cout << "WAIT" << endl;
+        }
+
+
+        cerr << "Time difference = " << std::chrono::duration_cast<std::chrono::milliseconds>(NOW - start).count() << "[ms]" << std::endl;
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
         // cout << "WAIT" << endl;
