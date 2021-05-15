@@ -178,13 +178,13 @@ public:
                     neigh[5] = neigh[3] ? neigh[3]->getNeigh(i + 1) : NULL;
                     for (int j = 0; j < 6; j++) {
                         if (neigh[j] && neigh[j]->tree == NULL && neigh[j]->richness > 0) {
-                            int score = neigh[j]->richness - (cellDistance(*tree.cell, *neigh[j]) / 3);
+                            int score = neigh[j]->richness - (cellDistance(*tree.cell, *neigh[j]) / 3)*3;
                             for (const Tree &tree1 : trees) {
-                                if (tree.cell != tree1.cell && tree1.exist() && tree1.isMine) {
-                                    score += cellDistance(*neigh[j], *tree1.cell) * 1.5;
-                                }
+                                // if (tree.cell != tree1.cell && tree1.exist() && tree1.isMine) {
+                                //     score += cellDistance(*neigh[j], *tree1.cell) * 1.5;
+                                // }
                                 if (tree1.exist() && tree1.isMine && canShadow(*neigh[j], *tree1.cell)) {
-                                    score -= 20;
+                                    score -= 10;
                                 }
                             }
 
@@ -357,8 +357,9 @@ int main()
     }
 
     // game loop
-
+    int round = 0;
     while (1) {
+        DEBUGVAR(round++);
         chrono::high_resolution_clock::time_point start = NOW;
         cin >> day;
         cin.ignore();
@@ -398,9 +399,9 @@ int main()
             // cerr << Tree::numberOfTrees << "\n";
         }
         set<pair<int, pair<int, int>>, decltype(cmp2)> result(Tree::getSeedPlant());
-    
+
         for (pair<int, pair<int, int>> r : result) {
-            cerr << r.first << " " << r.second.first << " " << r.second.second << endl;
+            cerr << "R: " << r.first << " " << r.second.first << " " << r.second.second << endl;
         }
         // for (int i = 0; i < Tree::numberOfTrees; ++i) {
         //     trees[i]
@@ -424,8 +425,9 @@ int main()
             for (const pair<int, pair<int, int>> &item : result) {
                 Tree &tree = Tree::trees[item.first];
                 Cell &cell = Cell::cells[item.second.first];
+                cerr << "I: " << item.first << " " << item.second.first << " " << item.second.second << endl;
                 if (cellDistance(*tree.cell, cell) > tree.size) {
-                    if (action::grow(tree)) {
+                    if (tree.growCost() <= sun && action::grow(tree)) {
                         break;
                     }
                 } else {
