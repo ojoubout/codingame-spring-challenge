@@ -14,8 +14,12 @@ using namespace std;
 #define NOW chrono::high_resolution_clock::now()
 #define CMLT_EXP ceil((23 - day) / 2.0)
 
-auto cmp = [](pair<int, int> a, pair<int, int> b) { return a.second > b.second; };
-auto cmp2 = [](pair<int, pair<int, int>> a, pair<int, pair<int, int>> b) { return a.second.second > b.second.second; };
+auto cmp = [](pair<int, int> a, pair<int, int> b) {
+    return a.second != b.second ? a.second > b.second : a.first > b.first;
+};
+auto cmp2 = [](pair<int, pair<int, int>> a, pair<int, pair<int, int>> b) {
+    return a.second.second != b.second.second ? a.second.second > b.second.second : a.first > b.first;
+};
 
 int day; // the game lasts 24 days: 0-23
 int sun; // your sun points
@@ -105,6 +109,43 @@ public:
             cost = size * (size + 1) + 1 + countMyTrees(size + 1);
         }
         return cost;
+    }
+
+    int countShadow() const {
+        int sunDir  = (day + 1) % 6;
+        int score = 0;
+        Cell *shadows[3];
+    
+        shadows[0] = cell->getNeigh(sunDir);
+        shadows[1] = shadows[0] ? shadows[0]->getNeigh(sunDir) : NULL;
+        shadows[2] = shadows[1] ? shadows[1]->getNeigh(sunDir) : NULL;
+        cerr << "E1" << endl;
+        for (int i = 0; i < size; ++i) {
+            if (shadows[i]) {
+                Tree *tree = shadows[i]->tree;
+                if (tree && size >= tree->size) {
+                    score += tree->isMine ? -tree->size : tree->size;
+                }
+            }
+        }
+        cerr << "E2" << endl;
+
+        for (const Tree & tree : trees) {
+            if (tree.exist()) {
+                shadows[0] = tree.cell->getNeigh(sunDir);
+                shadows[1] = shadows[0] ? shadows[0]->getNeigh(sunDir) : NULL;
+                shadows[2] = shadows[1] ? shadows[1]->getNeigh(sunDir) : NULL;
+                for (int i = 0; i < tree.size; ++i) {
+                    if (shadows[i]) {
+                        if (shadows[i]->index == cell->index) {
+                            score -= tree.size >= size ? size : 0;
+                        }
+                    }
+                }
+            }
+        }
+        cerr << "E3" << endl;
+        return score;
     }
 
     // pair<int, int> getNoShadowCell() {
@@ -207,7 +248,13 @@ public:
         // pair<int, int> best(-1, -100);
         for (const Tree &seed : trees) {
             if (seed.exist() && seed.isMine && seed.size < 3) {
-                int score = seed.size == 0 ? 2 : seed.size - countMyTrees(seed.size + 1)*2;
+                int score = seed.size - countMyTrees(seed.size + 1)*2;
+                for (const Tree &tree : trees) {
+                    if (tree.exist() && !tree.isMine && canShadow(*seed.cell, *tree.cell)) {
+                        ++score;
+                    }
+                }
+                cerr << "G0: " << seed.cell->index << " " << score << endl;
                 // for (const Tree &tree : trees) {
                 //     if (tree.exist() && tree.isMine && canShadow(*seed.cell, *tree.cell)) {
                 //         // cerr << "CAN SHADOW " << seed.cell->index << " " << tree.cell->index << endl;
@@ -220,6 +267,7 @@ public:
                 // }
             }
         }
+        cerr << "FG: " << result.size() << endl;
         return result;
     }
 
@@ -229,13 +277,15 @@ public:
 
         for (const Tree &seed : trees) {
             if (seed.exist() && seed.isMine && seed.size == 3) {
-                int score = -seed.cell->richness;
-                for (const Tree &tree : trees) {
-                    if (tree.exist() && tree.isMine && canShadow(*seed.cell, *tree.cell)) {
-                        // cerr << "CAN SHADOW " << seed.cell->index << " " << tree.cell->index << endl;
-                        ++score;
-                    }
-                }
+                int score = -seed.countShadow();
+                cerr << "BC: " << seed.cell->index << " " << score  << endl;
+
+                // for (const Tree &tree : trees) {
+                //     if (tree.exist() && tree.isMine && canShadow(*seed.cell, *tree.cell)) {
+                //         // cerr << "CAN SHADOW " << seed.cell->index << " " << tree.cell->index << endl;
+                //         ++score;
+                //     }
+                // }
                 result.insert(make_pair(seed.cell->index, score));
             }
         }
@@ -274,7 +324,7 @@ array<Tree, 37> Tree::trees;
 bool completeTrees();
 
 namespace action {
-    bool seed(Tree & tree, Cell & cell) {
+    bool seed(const Tree & tree, const Cell & cell) {
         if (!tree.isDormant) {
             cout << "SEED " << tree.cell->index << " " << cell.index << endl;
             return true;
@@ -283,7 +333,7 @@ namespace action {
         return false;
     }
 
-    bool grow(Tree & tree) {
+    bool grow(const Tree & tree) {
         if (!tree.isDormant) {
             if (tree.size == 2 && ((Tree::countMyTrees(3) + 1) >= CMLT_EXP)
             && sun >= (tree.growCost() + 4)) {
@@ -296,7 +346,7 @@ namespace action {
         return false;
     }
 
-    bool complete(Tree & tree) {
+    bool complete(const Tree & tree) {
         if (!tree.isDormant) {
             cout << "COMPLETE " << tree.cell->index << endl;
             return true;
@@ -313,9 +363,13 @@ namespace action {
 bool completeTrees() {
     cerr << "C " << Tree::countMyTrees(3) << " " << CMLT_EXP << endl;
     set<pair<int, int>, decltype(cmp)> trees = Tree::getCompleteTree();
+    for (const pair<int, int> &r : trees) {
+        cerr << "C: " << r.first << " " << r.second  << endl;
+    }
+
     int i = 0;
     for (const pair<int, int> &tree : trees) {
-        cerr << "CT " << tree.first << endl;
+        // cerr << "CT " << tree.first << endl;
         if (action::complete(Tree::trees[tree.first])) {
             break;
         }
@@ -418,14 +472,13 @@ int main()
         if (Tree::countMyTrees(3) >= CMLT_EXP) {
             tryNext = completeTrees();
         }
-        if (tryNext && Tree::countMyTrees(0) < 2 && Tree::countMyTrees(-1) < (MAX_TREE * (1 - pow(day / 23.0, 17))) && result.size() > 0) {
+        if (tryNext && Tree::countMyTrees(0) == 0 && Tree::countMyTrees(-1) < (MAX_TREE * (1 - pow(day / 23.0, 17))) && result.size() > 0) {
             int i = 0;
             tryNext = false;
             cerr << "S" << endl;
             for (const pair<int, pair<int, int>> &item : result) {
                 Tree &tree = Tree::trees[item.first];
                 Cell &cell = Cell::cells[item.second.first];
-                cerr << "I: " << item.first << " " << item.second.first << " " << item.second.second << endl;
                 if (cellDistance(*tree.cell, cell) > tree.size) {
                     if (tree.growCost() <= sun && action::grow(tree)) {
                         break;
@@ -446,8 +499,13 @@ int main()
             cerr << "G" << endl;
             set<pair<int, int>, decltype(cmp)> seeds = Tree::getGrowSeed();
             int i = 0;
+            for (const pair<int, int> &r : seeds) {
+                cerr << "G: " << r.first << " " << r.second  << endl;
+            }
+
             for (const pair<int, int> &growSeed : seeds) {
-                if (growSeed.first != -1 && action::grow(Tree::trees[growSeed.first])) {
+                const Tree &tree = Tree::trees[growSeed.first];
+                if (growSeed.first != -1 && tree.growCost() <= sun && action::grow(tree)) {
                     break;
                 }
                 ++i;
