@@ -18,7 +18,9 @@ auto cmp = [](pair<int, int> a, pair<int, int> b) {
     return a.second != b.second ? a.second > b.second : a.first > b.first;
 };
 auto cmp2 = [](pair<int, pair<int, int>> a, pair<int, pair<int, int>> b) {
-    return a.second.second != b.second.second ? a.second.second > b.second.second : a.first > b.first;
+    return a.second.second != b.second.second ? 
+    a.second.second > b.second.second : (a.second.first != b.second.first ?
+    a.second.first > b.second.first : a.first > b.first);
 };
 
 int day; // the game lasts 24 days: 0-23
@@ -219,18 +221,21 @@ public:
                     neigh[5] = neigh[3] ? neigh[3]->getNeigh(i + 1) : NULL;
                     for (int j = 0; j < 6; j++) {
                         if (neigh[j] && neigh[j]->tree == NULL && neigh[j]->richness > 0) {
-                            int score = neigh[j]->richness - (cellDistance(*tree.cell, *neigh[j]) / 3)*3;
+                            int score = neigh[j]->richness - cellDistance(*tree.cell, *neigh[j]);
+                            if (cellDistance(*tree.cell, *neigh[j]) > tree.size) {
+                                --score;
+                            }
                             for (const Tree &tree1 : trees) {
                                 // if (tree.cell != tree1.cell && tree1.exist() && tree1.isMine) {
                                 //     score += cellDistance(*neigh[j], *tree1.cell) * 1.5;
                                 // }
                                 if (tree1.exist() && tree1.isMine && canShadow(*neigh[j], *tree1.cell)) {
-                                    score -= 10;
+                                    score -= tree1.isMine ? 6 : -6;
                                 }
                             }
 
                             cerr << tree.cell->index << " " << neigh[j]->index << " " << score << endl;
-                            if (best.first == -1 || best.second < score) {
+                            if (best.first == -1 || best.second <= score) {
                                 best = make_pair(neigh[j]->index, score);
                             }
                         }
@@ -248,7 +253,10 @@ public:
         // pair<int, int> best(-1, -100);
         for (const Tree &seed : trees) {
             if (seed.exist() && seed.isMine && seed.size < 3) {
-                int score = seed.size - countMyTrees(seed.size + 1)*2;
+                int score = (seed.size == 0 ? -1 : 0) + seed.size - countMyTrees(seed.size + 1);
+                if (seed.size == 2 && day < 5) {
+                    score -= 7;
+                }
                 for (const Tree &tree : trees) {
                     if (tree.exist() && !tree.isMine && canShadow(*seed.cell, *tree.cell)) {
                         ++score;
@@ -475,10 +483,11 @@ int main()
         if (tryNext && Tree::countMyTrees(0) == 0 && Tree::countMyTrees(-1) < (MAX_TREE * (1 - pow(day / 23.0, 17))) && result.size() > 0) {
             int i = 0;
             tryNext = false;
-            cerr << "S" << endl;
+            cerr << "S " << result.size() << endl;
             for (const pair<int, pair<int, int>> &item : result) {
                 Tree &tree = Tree::trees[item.first];
                 Cell &cell = Cell::cells[item.second.first];
+                cerr << "S: " << item.first << " " << item.second.first << " " << item.second.second << endl;
                 if (cellDistance(*tree.cell, cell) > tree.size) {
                     if (tree.growCost() <= sun && action::grow(tree)) {
                         break;
